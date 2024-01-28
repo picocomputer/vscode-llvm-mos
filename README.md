@@ -1,4 +1,4 @@
-# RP6502 VSCode Scaffolding
+# RP6502 VSCode Scaffolding for LLVM-MOS
 
 This is scaffolding for a new Picocomputer 6502 software project.
 
