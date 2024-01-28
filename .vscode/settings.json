@@ -1,0 +1,5 @@
+{
+    "cmake.environment": {
+        "PATH": "~/llvm-mos/bin:${env:PATH}"
+    },
+}
