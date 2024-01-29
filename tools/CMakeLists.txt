@@ -8,15 +8,15 @@
 #  rp6502_executable(<name> START [addr] RESET [addr] roms...)
 #
 # Packages executable target ``<name>`` into RP6502 ROM format.
-# ``START <addr>`` defaults to 0x200.
-# ``RESET <addr>`` defaults to 0x200.
+# ``START <addr>`` defaults to none.
+# ``RESET <addr>`` defaults to none.
 # ``IRQ <addr>`` no default.
 # ``NMI <addr>`` no default.
 #
 function(rp6502_executable name)
     # Parse args
-    set(start_addr "0x200")
-    set(reset_addr "0x200")
+    set(start_addr "none")
+    set(reset_addr "none")
     set(irq_addr "none")
     set(nmi_addr "none")
     set(extra_roms)
@@ -55,8 +55,17 @@ function(rp6502_executable name)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     set(tool_command "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/rp6502.py"
-        -a "${start_addr}" -r "${reset_addr}"
     )
+    if (NOT start_addr STREQUAL "none")
+        list(APPEND tool_command
+            -a "${start_addr}"
+        )
+    endif ()
+    if (NOT reset_addr STREQUAL "none")
+        list(APPEND tool_command
+            -r "${reset_addr}"
+        )
+    endif ()
     if (NOT irq_addr STREQUAL "none")
         list(APPEND tool_command
             -i "${irq_addr}"
