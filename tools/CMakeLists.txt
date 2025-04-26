@@ -8,15 +8,15 @@
 #  rp6502_executable(<name> START [addr] RESET [addr] roms...)
 #
 # Packages executable target ``<name>`` into RP6502 ROM format.
-# ``START <addr>`` defaults to none.
-# ``RESET <addr>`` defaults to none.
+# ``START <addr>`` defaults to 0x200.
+# ``RESET <addr>`` defaults to 0x200.
 # ``IRQ <addr>`` no default.
 # ``NMI <addr>`` no default.
 #
 function(rp6502_executable name)
     # Parse args
-    set(start_addr "none")
-    set(reset_addr "none")
+    set(start_addr "0x200")
+    set(reset_addr "0x200")
     set(irq_addr "none")
     set(nmi_addr "none")
     set(extra_roms)
@@ -82,8 +82,9 @@ function(rp6502_executable name)
         -- ${extra_roms}
     )
     add_custom_command(TARGET ${name} POST_BUILD
-        COMMAND ${tool_command}
-        DEPENDS ${name})
+        COMMAND ${tool_command})
+    set_property( TARGET ${name} APPEND PROPERTY
+        LINK_DEPENDS ${extra_roms})
 endfunction()
 
 # Package anything as an RP6502 ROM.

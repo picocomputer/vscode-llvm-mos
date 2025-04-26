@@ -25,7 +25,7 @@ path for where you installed LLVM-MOS.
  * [VSCode](https://code.visualstudio.com/). This has its own installer.
  * An install of [LLVM-MOS](https://llvm-mos.org/wiki/Welcome).
    See PATH notes above.
- * The following tools installed from your package managers:
+ * The following tools installed from your package manager:
     * `sudo apt-get install cmake python3 pip git build-essential`
     * `pip install pyserial`
 
