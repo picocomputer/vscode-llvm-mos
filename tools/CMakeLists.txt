@@ -5,18 +5,28 @@
 # RP6502 Executables
 # ^^^^^^^^^^^^^^^^^^
 #
-#  rp6502_executable(<name> START [addr] RESET [addr] roms...)
+#  rp6502_executable(<name>
+#                    [START <addr>]
+#                    [RESET <addr>]
+#                    [IRQ <addr>]
+#                    [NMI <addr>]
+#                    roms...)
 #
 # Packages executable target ``<name>`` into RP6502 ROM format.
-# ``START <addr>`` defaults to 0x200.
-# ``RESET <addr>`` defaults to 0x200.
-# ``IRQ <addr>`` no default.
-# ``NMI <addr>`` no default.
+# ``START <addr>`` Starting memory address for binary executable.
+# ``RESET <addr>`` Address for RESET to be stored at $FFFC.
+# ``IRQ <addr>`` Address for IRQ to be stored at $FFFE.
+# ``NMI <addr>`` Address for NMI to be stored at $FFFA.
 #
 function(rp6502_executable name)
     # Parse args
-    set(start_addr "0x200")
-    set(reset_addr "0x200")
+    if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
+        set(start_addr "none")
+        set(reset_addr "none")
+    else ()
+        set(start_addr "0x200")
+        set(reset_addr "0x200")
+    endif ()
     set(irq_addr "none")
     set(nmi_addr "none")
     set(extra_roms)
@@ -92,10 +102,10 @@ endfunction()
 # RP6502 ROMs
 # ^^^^^^^^^^^
 #
-#  rp6502_asset(<name> addr in_file {out_file})
+#  rp6502_asset(<name> addr in_file [out_file])
 #
-# Packages the ``<in_file>`` into RP6502 ROM format.
-# ``out_file`` defaults to in_file plus ``.rp6502``
+# Packages the ``in_file`` into RP6502 ROM format.
+# ``out_file`` defaults to ``in_file`` plus ``.rp6502``
 #
 function(rp6502_asset name addr in_file)
     # Parse optional args
