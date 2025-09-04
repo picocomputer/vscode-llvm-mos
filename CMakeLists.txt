@@ -11,6 +11,7 @@ add_executable(hello)
 rp6502_executable(hello
     DATA file
     RESET file
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/main.hlp
 )
 target_sources(hello PRIVATE
     src/main.c
