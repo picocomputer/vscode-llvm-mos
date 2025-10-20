@@ -22,7 +22,7 @@ path for where you installed LLVM-MOS.
  * An install of [LLVM-MOS](https://llvm-mos.org/wiki/Welcome).
    See PATH notes above.
  * The following tools installed from your package manager:
-    * `sudo apt-get install cmake python3 pip git build-essential`
+    * `sudo apt install cmake python3 pip git build-essential`
     * `pip install pyserial`
 
 ### Windows Tools Install:
