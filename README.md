@@ -22,8 +22,7 @@ path for where you installed LLVM-MOS.
  * An install of [LLVM-MOS](https://llvm-mos.org/wiki/Welcome).
    See PATH notes above.
  * The following tools installed from your package manager:
-    * `sudo apt install cmake python3 pip git build-essential`
-    * `pip install pyserial`
+    * `sudo apt install cmake python3 git build-essential`
 
 ### Windows Tools Install:
  * [VSCode](https://code.visualstudio.com/). This has its own installer.
@@ -32,7 +31,6 @@ path for where you installed LLVM-MOS.
  * Install python by typing `python3` which will launch the Microsoft Store
    where you start the install. If python runs, this has already been done,
    exit python with Ctrl-Z plus Return.
- * Install the python serial library with `pip install pyserial`.
  * `winget install -e --id Kitware.CMake`.
  * `winget install -e --id GnuWin32.Make`.
     Add "C:\Program Files (x86)\GnuWin32\bin" to your path.
