@@ -25,16 +25,16 @@ path for where you installed LLVM-MOS.
     * `sudo apt install cmake python3 git build-essential`
 
 ### Windows Tools Install:
- * [VSCode](https://code.visualstudio.com/). This has its own installer.
+ * `winget install -e --id Microsoft.VisualStudioCode`
+ * `winget install -e --id Git.Git`
+ * `winget install -e --id Kitware.CMake`
+ * `winget install -e --id GnuWin32.Make`.
+    Add "C:\Program Files (x86)\GnuWin32\bin" to your path.
  * An install of [LLVM-MOS](https://llvm-mos.org/wiki/Welcome).
    See PATH notes above.
  * Install python by typing `python3` which will launch the Microsoft Store
    where you start the install. If python runs, this has already been done,
    exit python with Ctrl-Z plus Return.
- * `winget install -e --id Kitware.CMake`.
- * `winget install -e --id GnuWin32.Make`.
-    Add "C:\Program Files (x86)\GnuWin32\bin" to your path.
- * `winget install -e --id Git.Git`.
 
 ### Getting Started:
 Go to the [GitHub template](https://github.com/picocomputer/vscode-llvm-mos)
@@ -48,15 +48,21 @@ $ cd [to_where_it_cloned]
 $ code .
 ```
 
-Install the extensions and choose the default or obvious choice if VSCode
-prompts you. Choose "[Unspecified]" for the CMake kit.
+Install the recommended extensions when VS Code prompts you, choosing the
+default or obvious choice for any other prompts. The tools we use in VS Code
+are constantly improving and changing making it too difficult to maintain
+documentation. Choose "[Unspecified]" for the CMake kit.
 
-"Start Debugging" (F5) will build your project and upload it to the
-Picocomputer over a USB cable plugged into the Pico VGA. There is no debugger
-for the 6502; this process will exit immediately after the upload.
-If the default communications device doesn't work, edit ".rp6502" in the
-project root folder. This file will be created the first time you
-"Start Debugging" and will be ignored by git.
+"Start Debugging" (F5) will build your project and run it on a Picocomputer.
+Connect with a USB cable plugged into the RP6502-VGA USB port.
 
-Edit CMakeLists.txt to add new source and asset files. It's
-pretty normal C/ASM development from here on.
+If you get a Python error about the communications device not being found,
+edit `.rp6502` in the project root. This file will be created the first time
+you "Start Debugging" and will be ignored by git.
+
+Once the program is running, a debug console becomes available on the terminal
+tab. It will say "Python Debug Console" because the rp6502.py tool is Python.
+Ctrl-A then X will exit. Ctrl-A then B will send a break.
+
+Edit `CMakeLists.txt` to add new source and asset files. From here on, it's
+standard C/assembly development for the 6502 platform.
