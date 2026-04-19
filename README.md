@@ -50,19 +50,24 @@ $ code .
 
 Install the recommended extensions when VS Code prompts you, choosing the
 default or obvious choice for any other prompts. The tools we use in VS Code
-are constantly improving and changing making it too difficult to maintain
-documentation. Choose "[Unspecified]" for the CMake kit.
+are constantly improving and have their own documentation. The first problem
+you might encounter is that no kit is configured, so begin by reading this
+and choosing the `[Unspecified]` kit:
+https://code.visualstudio.com/docs/cpp/cmake-linux
+The full documentation for the CMake plugin is here:
+https://github.com/microsoft/vscode-cmake-tools/blob/main/docs/README.md
 
 "Start Debugging" (F5) will build your project and run it on a Picocomputer.
 Connect with a USB cable plugged into the RP6502-VGA USB port.
 
 If you get a Python error about the communications device not being found,
 edit `.rp6502` in the project root. This file will be created the first time
-you "Start Debugging" and will be ignored by git.
+you "Start Debugging" and will be ignored by git. You may also connect over
+telnet by instead providing a hostname for the device and setting the key.
 
 Once the program is running, a debug console becomes available on the terminal
 tab. It will say "Python Debug Console" because the rp6502.py tool is Python.
 Ctrl-A then X will exit. Ctrl-A then B will send a break.
 
 Edit `CMakeLists.txt` to add new source and asset files. From here on, it's
-standard C/assembly development for the 6502 platform.
+standard C/C++/assembly development for the 6502 platform.
