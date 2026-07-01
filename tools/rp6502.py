@@ -1061,6 +1061,10 @@ class ROM:
 class Emulator:
     """rp6502-emu discovery and debug-adapter error reporting."""
 
+    # True once we know this run is an `emu` launch: we are the IDE's debug
+    # adapter, so errors must be promoted to DAP (see fatal).
+    launching = False
+
     @staticmethod
     def find():
         """Locate the rp6502-emu executable for first-run config hinting."""
@@ -1119,7 +1123,7 @@ class Emulator:
         return exe
 
     @staticmethod
-    def _send_launch_error(message: str):
+    def send_dap_error(message: str):
         """Speak minimal DAP: acknowledge `initialize`, then fail `launch`/`attach`.
 
         Reads Content-Length framed messages from our stdin (the DAP request
@@ -1194,24 +1198,6 @@ class Emulator:
             if command == "initialize":
                 response["body"] = {}
             send(response)
-
-    @staticmethod
-    def fatal(message: str):
-        """Report a fatal pre-launch emulator error to the user, then exit.
-
-        The `emu` command runs as the lldb-dap debug adapter, so our stdout is
-        the DAP protocol stream and the IDE does not surface our stderr. When
-        launched by the IDE (stdin is a pipe) we speak just enough DAP to make
-        the error visible in VSCode; run from a terminal (stdin is a tty) stderr
-        is enough.
-        """
-        print(f"[{SCRIPT_FILE}] {message}", file=sys.stderr)
-        if not sys.stdin.isatty():
-            try:
-                Emulator._send_launch_error(message)
-            except Exception:
-                pass  # Best effort; the stderr message above is the fallback.
-        sys.exit(1)
 
 
 def exec_args():
@@ -1323,6 +1309,7 @@ def exec_args():
         help=f"Attach to console terminal on run.",
     )
     args = parser.parse_args()
+    Emulator.launching = args.command == "emu"
 
     # Config file (shared with the emulator, which owns it in ImGui ini format).
     if args.config:
@@ -1356,10 +1343,7 @@ def exec_args():
                 with open(args.config, "w") as cfg:
                     config.write(cfg)
         except (configparser.Error, OSError) as e:
-            message = f"Cannot load config {args.config}: {e}"
-            if args.command == "emu":
-                Emulator.fatal(message)
-            raise RuntimeError(message)
+            raise RuntimeError(f"Cannot load config {args.config}: {e}")
         if config.has_section(launch):
             sec = config[launch]
             args.workdir = sec.get("workdir", "") or None
@@ -1557,16 +1541,15 @@ def exec_args():
     if args.command == "emu":
         # `emu` exists to launch the emulator as the IDE's debug adapter, which
         # always passes the project config (for the emulator path and --ini), so
-        # an invocation without one is a misconfiguration, not a search prompt.
-        # Errors here go through Emulator.fatal() so the IDE actually shows them:
-        # as the debug adapter, our stdout is the DAP stream and stderr is
-        # invisible to the user.
+        # an invocation without one is a misconfiguration.
         if not args.config:
-            Emulator.fatal("emu requires -c/--config <file> with an 'emulator' path.")
+            raise RuntimeError(
+                "emu requires -c/--config <file> with an 'emulator' path."
+            )
         config_hint = f" in {args.config}"
         emulator = getattr(args, "emulator", "")
         if not emulator:
-            Emulator.fatal(
+            raise RuntimeError(
                 f"No emulator configured — set 'emulator'{config_hint} "
                 f"to the rp6502-emu executable path."
             )
@@ -1577,13 +1560,13 @@ def exec_args():
         has_sep = os.sep in emulator or (os.altsep and os.altsep in emulator)
         if has_sep:
             if not os.path.isfile(emulator):
-                Emulator.fatal(
+                raise FileNotFoundError(
                     f"Emulator '{emulator}' not found — fix 'emulator'{config_hint}."
                 )
         else:
             resolved = shutil.which(emulator)
             if resolved is None:
-                Emulator.fatal(
+                raise FileNotFoundError(
                     f"Emulator '{emulator}' not found on PATH — fix 'emulator'{config_hint}."
                 )
             emulator = resolved
@@ -1597,7 +1580,7 @@ def exec_args():
             returncode = subprocess.run(cmd).returncode
         except OSError as e:
             # Backstop for exec failures on a path shutil.which deemed runnable.
-            Emulator.fatal(f"Cannot run emulator '{emulator}'{config_hint}: {e}")
+            raise RuntimeError(f"Cannot run emulator '{emulator}'{config_hint}: {e}")
         sys.exit(returncode)
 
 
@@ -1606,23 +1589,33 @@ if __name__ == "__main__":
     # VSCode SIGKILLs the terminal while in raw mode, return to cooked mode.
     if "tty" in globals() and sys.stdin.isatty():
         os.system("stty sane")
-    # These exceptions are a normal part of using this tool in a build system.
-    # It's annoying when a debugger catches them so we intercept to exit cleanly.
     try:
         exec_args()
-    except (
-        ROMException,
-        FileNotFoundError,
-        TimeoutError,
-        RuntimeError,
-        ConnectionError,
-        socket.gaierror,
-    ) as e:
-        # Unresolved variable substitutions like ${command:cmake.launchTargetPath}
+    except Exception as e:
+        # On an emu launch we are the IDE's debug adapter.
+        if Emulator.launching:
+            print(f"[{SCRIPT_FILE}] {e}", file=sys.stderr)
+            if not sys.stdin.isatty():
+                try:
+                    Emulator.send_dap_error(f"{e}")
+                except Exception:
+                    pass  # Best effort
+            sys.exit(1)
+        # Exceptions to show in VS Code output instead of Python debugger.
+        if not isinstance(
+            e,
+            (
+                ROMException,
+                FileNotFoundError,
+                TimeoutError,
+                RuntimeError,
+                ConnectionError,
+                socket.gaierror,
+            ),
+        ):
+            raise
+        # Unresolved variable substitutions like ${command:cmake.launchTargetPath}.
         if re.search(r"\$\{[^}]*\}", str(e)):
-            print(
-                f"[{os.path.basename(__file__)}] Check build for failures",
-                file=sys.stderr,
-            )
-        print(f"[{os.path.basename(__file__)}] {e}", file=sys.stderr)
-        os._exit(1)  # special exit without raising
+            print(f"[{SCRIPT_FILE}] Check build for failures", file=sys.stderr)
+        print(f"[{SCRIPT_FILE}] {e}", file=sys.stderr)
+        os._exit(1)  # Special exit without raising debugger.
