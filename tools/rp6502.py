@@ -1571,8 +1571,6 @@ def exec_args():
                 )
             emulator = resolved
         cmd = [emulator, "--dap", "--ini", args.config]
-        if args.workdir:
-            cmd += ["--fs", args.workdir]
         # Status to stderr only: stdout carries the lldb-dap DAP stream.
         print(f"[{SCRIPT_FILE}] Launching {emulator}", file=sys.stderr)
         # Inherit stdio so the DAP stream passes straight through.
