@@ -1280,7 +1280,7 @@ def exec_args():
         "--config",
         dest="config",
         metavar="name",
-        help=f"Configuration file for console connection and emulator launch.",
+        help=f"Configuration file for debug settings.",
     )
     parser.add_argument(
         "-d",
@@ -1325,33 +1325,23 @@ def exec_args():
     args = parser.parse_args()
 
     # Config file (shared with the emulator, which owns it in ImGui ini format).
-    # Our block is the ImGui custom-handler section [RP6502][Launch]; configparser's
-    # greedy section regex reads that header as a section named "RP6502][Launch".
-    # interpolation is disabled so a literal '%' in a device/key is kept verbatim.
     if args.config:
         launch = f"{SCRIPT_NAME}][Launch"
         config = configparser.ConfigParser(interpolation=None)
         try:
             existed = os.path.exists(args.config)
             if existed:
-                # configparser.read() silently skips unreadable files, which would
-                # later masquerade as "no emulator configured" — check first.
+                # configparser.read() silently skips unreadable files
                 if not os.access(args.config, os.R_OK):
                     raise PermissionError("permission denied")
                 config.read(args.config)
-            # Upgrade a legacy plain [RP6502] block to [RP6502][Launch]. Strong-
-            # positive test: an existing [RP6502][Launch] cancels the upgrade, so a
-            # new (ImGui-owned) file is never rewritten. An old file never carries
-            # ImGui sections, so the full config.write() below is safe.
+            # Upgrade a legacy plain [RP6502] to [RP6502][Launch].
             upgrading = config.has_section(SCRIPT_NAME) and not config.has_section(launch)
             if (not existed) or upgrading:
-                # Snapshot the legacy values BEFORE removing the section (the
-                # SectionProxy would go stale once the section is gone).
                 old = dict(config[SCRIPT_NAME]) if config.has_section(SCRIPT_NAME) else {}
                 pick = lambda k: old.get(k, "")
                 config.remove_section(SCRIPT_NAME)  # drop legacy [RP6502]
-                # Write the COMPLETE current key set (defaults fill blanks) so the
-                # user always sees the full list of keys, even when blank.
+                # User always sees the full list of keys, even when blank.
                 config[launch] = {
                     "device": pick("device") or args.device,
                     "key": pick("key"),
@@ -1363,8 +1353,6 @@ def exec_args():
                     config.write(cfg)
         except (configparser.Error, OSError) as e:
             message = f"Cannot load config {args.config}: {e}"
-            # emu is the debug adapter, so route through the DAP error channel;
-            # other commands surface via the top-level handler (stderr + exit).
             if args.command == "emu":
                 Emulator.fatal(message)
             raise RuntimeError(message)
