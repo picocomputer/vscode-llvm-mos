@@ -1336,9 +1336,13 @@ def exec_args():
                     raise PermissionError("permission denied")
                 config.read(args.config)
             # Upgrade a legacy plain [RP6502] to [RP6502][Launch].
-            upgrading = config.has_section(SCRIPT_NAME) and not config.has_section(launch)
+            upgrading = config.has_section(SCRIPT_NAME) and not config.has_section(
+                launch
+            )
             if (not existed) or upgrading:
-                old = dict(config[SCRIPT_NAME]) if config.has_section(SCRIPT_NAME) else {}
+                old = (
+                    dict(config[SCRIPT_NAME]) if config.has_section(SCRIPT_NAME) else {}
+                )
                 pick = lambda k: old.get(k, "")
                 config.remove_section(SCRIPT_NAME)  # drop legacy [RP6502]
                 # User always sees the full list of keys, even when blank.
