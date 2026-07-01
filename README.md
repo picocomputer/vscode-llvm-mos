@@ -57,13 +57,23 @@ https://code.visualstudio.com/docs/cpp/cmake-linux
 The full documentation for the CMake plugin is here:
 https://github.com/microsoft/vscode-cmake-tools/blob/main/docs/README.md
 
-"Start Debugging" (F5) will build your project and run it on a Picocomputer.
-Connect with a USB cable plugged into the RP6502-VGA USB port.
+"Start Debugging" (F5) offers two launch configurations:
 
-If you get a Python error about the communications device not being found,
-edit `.rp6502` in the project root. This file will be created the first time
-you "Start Debugging" and will be ignored by git. You may also connect over
-telnet by instead providing a hostname for the device and setting the key.
+ * **RP6502 (Emulator)** is the default. It builds your project and runs it with
+   source-level debugging in the rp6502 emulator.
+ * **RP6502 (Hardware)** builds your project and runs it on a Picocomputer 6502.
+   Connect with telnet or a USB cable plugged into the RP6502-VGA USB port.
+
+Both read `.rp6502` in the project root. This file is created the first time you
+"Start Debugging" and is ignored by git.
+
+For the emulator, the `emulator` setting must point to the `rp6502-emu`
+executable (a bare name is searched on your PATH).
+
+For hardware, set `device` to the serial port. If you get a Python error about
+the communications device not being found, edit `device` in `.rp6502`. You may
+also connect over telnet by instead providing a hostname for the device and
+setting the key.
 
 Once the program is running, a debug console becomes available on the terminal
 tab. It will say "Python Debug Console" because the rp6502.py tool is Python.

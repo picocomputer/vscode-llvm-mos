@@ -19,7 +19,9 @@ import select
 import ctypes
 import json
 import glob
+import shutil
 import socket
+import subprocess
 from typing import Union
 
 # POSIX
@@ -1056,6 +1058,162 @@ class ROM:
         return None, None
 
 
+class Emulator:
+    """rp6502-emu discovery and debug-adapter error reporting."""
+
+    @staticmethod
+    def find():
+        """Locate the rp6502-emu executable for first-run config hinting."""
+        is_windows = platform.system() == "Windows"
+        exe = "rp6502-emu.exe" if is_windows else "rp6502-emu"
+
+        def expand(p):
+            return os.path.expanduser(os.path.expandvars(p))
+
+        candidates = []
+        # Anything already on PATH (a deliberate install).
+        found = shutil.which(exe)
+        if found:
+            candidates.append(found)
+        # Build-tree layout for possible `rp6502` repo destinations
+        repos = ("rp6502",)
+        build_subdirs = (
+            os.path.join("build", "emulator"),
+            os.path.join("build", "emulator", "Release"),
+            os.path.join("build", "emulator", "Debug"),
+        )
+        src_roots = ("~", "~/src", "~/Projects", "~/projects", "~/dev", "~/git")
+        for root in src_roots:
+            for repo in repos:
+                for sub in build_subdirs:
+                    candidates.append(expand(os.path.join(root, repo, sub, exe)))
+        # Common install / bin directories.
+        if is_windows:
+            for var in (
+                "ProgramFiles",
+                "ProgramFiles(x86)",
+                "ProgramW6432",
+                "LOCALAPPDATA",
+                "APPDATA",
+            ):
+                base = os.environ.get(var)
+                if base:
+                    for repo in repos:
+                        candidates.append(os.path.join(base, repo, exe))
+        else:
+            for d in (
+                "~/bin",
+                "~/.local/bin",
+                "/usr/local/bin",
+                "/usr/bin",
+                "/bin",
+                "/opt/homebrew/bin",
+                "/opt/rp6502",
+                "/opt/rp6502/bin",
+            ):
+                candidates.append(expand(os.path.join(d, exe)))
+
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return os.path.realpath(candidate)
+        return exe
+
+    @staticmethod
+    def _send_launch_error(message: str):
+        """Speak minimal DAP: acknowledge `initialize`, then fail `launch`/`attach`.
+
+        Reads Content-Length framed messages from our stdin (the DAP request
+        stream) and writes responses to stdout. VSCode shows the message from a
+        failed launch/attach response in an error dialog.
+        """
+        stdin = sys.stdin.buffer
+        stdout = sys.stdout.buffer
+        out_seq = 0
+
+        def read_request():
+            header = b""
+            while not header.endswith(b"\r\n\r\n"):
+                byte = stdin.read(1)
+                if not byte:
+                    return None  # stream closed before a full header
+                header += byte
+            length = 0
+            for line in header.split(b"\r\n"):
+                name, sep, value = line.partition(b":")
+                if sep and name.strip().lower() == b"content-length":
+                    length = int(value.strip())
+            body = b""
+            while len(body) < length:
+                chunk = stdin.read(length - len(body))
+                if not chunk:
+                    return None
+                body += chunk
+            return json.loads(body.decode("utf-8"))
+
+        def send(response):
+            nonlocal out_seq
+            out_seq += 1
+            response["seq"] = out_seq
+            data = json.dumps(response).encode("utf-8")
+            stdout.write(
+                b"Content-Length: " + str(len(data)).encode("ascii") + b"\r\n\r\n"
+            )
+            stdout.write(data)
+            stdout.flush()
+
+        while True:
+            request = read_request()
+            if request is None:
+                return
+            if request.get("type") != "request":
+                continue
+            command = request.get("command")
+            request_seq = request.get("seq", 0)
+            if command in ("launch", "attach"):
+                send(
+                    {
+                        "type": "response",
+                        "request_seq": request_seq,
+                        "success": False,
+                        "command": command,
+                        "message": message,
+                        "body": {
+                            "error": {"id": 1, "format": message, "showUser": True}
+                        },
+                    }
+                )
+                return
+            # `initialize` (and anything else before launch) gets a bare success
+            # so the client proceeds to send the launch request we then fail.
+            response = {
+                "type": "response",
+                "request_seq": request_seq,
+                "success": True,
+                "command": command,
+            }
+            if command == "initialize":
+                response["body"] = {}
+            send(response)
+
+    @staticmethod
+    def fatal(message: str):
+        """Report a fatal pre-launch emulator error to the user, then exit.
+
+        The `emu` command runs as the lldb-dap debug adapter, so our stdout is
+        the DAP protocol stream and the IDE does not surface our stderr. When
+        launched by the IDE (stdin is a pipe) we speak just enough DAP to make
+        the error visible in VSCode; run from a terminal (stdin is a tty) stderr
+        is enough.
+        """
+        print(f"[{SCRIPT_FILE}] {message}", file=sys.stderr)
+        if not sys.stdin.isatty():
+            try:
+                Emulator._send_launch_error(message)
+            except Exception:
+                pass  # Best effort; the stderr message above is the fallback.
+        sys.exit(1)
+
+
 def exec_args():
     # Standard library argument parser
     class CustomFormatter(argparse.HelpFormatter):
@@ -1069,6 +1227,7 @@ def exec_args():
     sp = parser.add_subparsers(dest="command", required=True)
     cmds = {
         "term": ("Attach to the RIA console.", None),
+        "emu": ("Launch emulator from config (for IDE).", None),
         "run": ("Run local ROM by sending to RIA.", 1),
         "upload": ("Upload local files to RIA USB storage.", "+"),
         "basic": ("Executes a program with the installed BASIC.", 1),
@@ -1121,7 +1280,7 @@ def exec_args():
         "--config",
         dest="config",
         metavar="name",
-        help=f"Configuration file for console connection.",
+        help=f"Configuration file for console connection and emulator launch.",
     )
     parser.add_argument(
         "-d",
@@ -1165,25 +1324,60 @@ def exec_args():
     )
     args = parser.parse_args()
 
-    # Standard library configuration parser
+    # Config file (shared with the emulator, which owns it in ImGui ini format).
+    # Our block is the ImGui custom-handler section [RP6502][Launch]; configparser's
+    # greedy section regex reads that header as a section named "RP6502][Launch".
+    # interpolation is disabled so a literal '%' in a device/key is kept verbatim.
     if args.config:
-        config = configparser.ConfigParser()
-        if not os.path.exists(args.config):
-            config[SCRIPT_NAME] = {
-                "device": args.device,
-                "key": args.key or "",
-                "workdir": args.workdir or "",
-                "term": args.term,
-            }
-            with open(args.config, "w") as cfg:
-                config.write(cfg)
-        else:
-            config.read(args.config)
-        if config.has_section(SCRIPT_NAME):
-            args.device = config[SCRIPT_NAME].get("device", args.device)
-            args.term = config[SCRIPT_NAME].get("term", args.term)
-            args.workdir = config[SCRIPT_NAME].get("workdir", "") or None
-            args.key = config[SCRIPT_NAME].get("key", "") or args.key or None
+        launch = f"{SCRIPT_NAME}][Launch"
+        config = configparser.ConfigParser(interpolation=None)
+        try:
+            existed = os.path.exists(args.config)
+            if existed:
+                # configparser.read() silently skips unreadable files, which would
+                # later masquerade as "no emulator configured" — check first.
+                if not os.access(args.config, os.R_OK):
+                    raise PermissionError("permission denied")
+                config.read(args.config)
+            # Upgrade a legacy plain [RP6502] block to [RP6502][Launch]. Strong-
+            # positive test: an existing [RP6502][Launch] cancels the upgrade, so a
+            # new (ImGui-owned) file is never rewritten. An old file never carries
+            # ImGui sections, so the full config.write() below is safe.
+            upgrading = config.has_section(SCRIPT_NAME) and not config.has_section(launch)
+            if (not existed) or upgrading:
+                # Snapshot the legacy values BEFORE removing the section (the
+                # SectionProxy would go stale once the section is gone).
+                old = dict(config[SCRIPT_NAME]) if config.has_section(SCRIPT_NAME) else {}
+                pick = lambda k: old.get(k, "")
+                config.remove_section(SCRIPT_NAME)  # drop legacy [RP6502]
+                # Write the COMPLETE current key set (defaults fill blanks) so the
+                # user always sees the full list of keys, even when blank.
+                config[launch] = {
+                    "device": pick("device") or args.device,
+                    "key": pick("key"),
+                    "workdir": pick("workdir"),
+                    "term": pick("term") or args.term,
+                    "emulator": pick("emulator") or Emulator.find(),
+                }
+                with open(args.config, "w") as cfg:
+                    config.write(cfg)
+        except (configparser.Error, OSError) as e:
+            message = f"Cannot load config {args.config}: {e}"
+            # emu is the debug adapter, so route through the DAP error channel;
+            # other commands surface via the top-level handler (stderr + exit).
+            if args.command == "emu":
+                Emulator.fatal(message)
+            raise RuntimeError(message)
+        if config.has_section(launch):
+            sec = config[launch]
+            args.workdir = sec.get("workdir", "") or None
+            args.emulator = sec.get("emulator", "")
+            args.device = sec.get("device", args.device)
+            args.key = sec.get("key", "") or args.key or None
+            args.term = sec.get("term", args.term)
+
+    if args.workdir:
+        args.workdir = args.workdir.strip().strip("/") or None
 
     # Because parser is bad at bool
     if args.term.lower() in ["t", "true"] or (args.term.isdigit() and args.term != "0"):
@@ -1246,7 +1440,7 @@ def exec_args():
         console = Console(transport)
         console.send_break()
         if args.workdir:
-            console.command(f"CD {json.dumps(args.workdir)}")
+            console.command(f"CD {json.dumps('/' + args.workdir)}")
 
     if args.command == "term":
         code_page = console.code_page()
@@ -1367,6 +1561,52 @@ def exec_args():
                     )
                 )
                 file.write(asset_data)
+
+    if args.command == "emu":
+        # `emu` exists to launch the emulator as the IDE's debug adapter, which
+        # always passes the project config (for the emulator path and --ini), so
+        # an invocation without one is a misconfiguration, not a search prompt.
+        # Errors here go through Emulator.fatal() so the IDE actually shows them:
+        # as the debug adapter, our stdout is the DAP stream and stderr is
+        # invisible to the user.
+        if not args.config:
+            Emulator.fatal("emu requires -c/--config <file> with an 'emulator' path.")
+        config_hint = f" in {args.config}"
+        emulator = getattr(args, "emulator", "")
+        if not emulator:
+            Emulator.fatal(
+                f"No emulator configured — set 'emulator'{config_hint} "
+                f"to the rp6502-emu executable path."
+            )
+        emulator = os.path.expanduser(os.path.expandvars(emulator))
+        # An explicit path (with a separator) must exist; a bare name is resolved
+        # against PATH so we can report "not found on PATH" precisely (rather than
+        # a misleading errno from subprocess on non-executable PATH entries).
+        has_sep = os.sep in emulator or (os.altsep and os.altsep in emulator)
+        if has_sep:
+            if not os.path.isfile(emulator):
+                Emulator.fatal(
+                    f"Emulator '{emulator}' not found — fix 'emulator'{config_hint}."
+                )
+        else:
+            resolved = shutil.which(emulator)
+            if resolved is None:
+                Emulator.fatal(
+                    f"Emulator '{emulator}' not found on PATH — fix 'emulator'{config_hint}."
+                )
+            emulator = resolved
+        cmd = [emulator, "--dap", "--ini", args.config]
+        if args.workdir:
+            cmd += ["--fs", args.workdir]
+        # Status to stderr only: stdout carries the lldb-dap DAP stream.
+        print(f"[{SCRIPT_FILE}] Launching {emulator}", file=sys.stderr)
+        # Inherit stdio so the DAP stream passes straight through.
+        try:
+            returncode = subprocess.run(cmd).returncode
+        except OSError as e:
+            # Backstop for exec failures on a path shutil.which deemed runnable.
+            Emulator.fatal(f"Cannot run emulator '{emulator}'{config_hint}: {e}")
+        sys.exit(returncode)
 
 
 # This file may be included or run like a program.
