@@ -1070,56 +1070,49 @@ class Emulator:
         """Locate the rp6502-emu executable for first-run config hinting."""
         is_windows = platform.system() == "Windows"
         exe = "rp6502-emu.exe" if is_windows else "rp6502-emu"
-
-        def expand(p):
-            return os.path.expanduser(os.path.expandvars(p))
-
-        candidates = []
-        # Anything already on PATH (a deliberate install).
-        found = shutil.which(exe)
-        if found:
-            candidates.append(found)
-        # Build-tree layout for possible `rp6502` repo destinations
-        repos = ("rp6502",)
-        build_subdirs = (
-            os.path.join("build", "emulator"),
-            os.path.join("build", "emulator", "Release"),
-            os.path.join("build", "emulator", "Debug"),
-        )
-        src_roots = ("~", "~/src", "~/Projects", "~/projects", "~/dev", "~/git")
-        for root in src_roots:
-            for repo in repos:
+        try:
+            candidates = []
+            # Anything already on PATH (a deliberate install).
+            try:
+                found = shutil.which(exe)
+            except Exception:
+                found = None  # bizarre PATH/PATHEXT; keep scanning
+            if found:
+                candidates.append(found)
+            # Build-tree layouts for `rp6502` repo checkouts. Plain covers
+            # single-config generators; Release/Debug cover multi-config.
+            build_subdirs = (
+                os.path.join("build", "emulator"),
+                os.path.join("build", "emulator", "Release"),
+                os.path.join("build", "emulator", "Debug"),
+            )
+            src_roots = ("~", "~/src", "~/Projects", "~/projects", "~/dev", "~/git")
+            for root in src_roots:
                 for sub in build_subdirs:
-                    candidates.append(expand(os.path.join(root, repo, sub, exe)))
-        # Common install / bin directories.
-        if is_windows:
-            for var in (
-                "ProgramFiles",
-                "ProgramFiles(x86)",
-                "ProgramW6432",
-                "LOCALAPPDATA",
-                "APPDATA",
-            ):
-                base = os.environ.get(var)
-                if base:
-                    for repo in repos:
-                        candidates.append(os.path.join(base, repo, exe))
-        else:
-            for d in (
-                "~/bin",
-                "~/.local/bin",
-                "/usr/local/bin",
-                "/usr/bin",
-                "/bin",
-                "/opt/homebrew/bin",
-                "/opt/rp6502",
-                "/opt/rp6502/bin",
-            ):
-                candidates.append(expand(os.path.join(d, exe)))
-
-        for candidate in candidates:
-            if os.path.isfile(candidate):
-                return os.path.realpath(candidate)
+                    candidates.append(
+                        os.path.expanduser(os.path.join(root, "rp6502", sub, exe))
+                    )
+            # Common install directories.
+            if is_windows:
+                for var in ("ProgramFiles", "LOCALAPPDATA"):
+                    base = os.environ.get(var)
+                    if base:
+                        candidates.append(os.path.join(base, "rp6502", exe))
+            else:
+                for d in (
+                    "~/bin",
+                    "~/.local/bin",
+                ):
+                    candidates.append(os.path.expanduser(os.path.join(d, exe)))
+            for candidate in candidates:
+                # isfile returns False on OSError/ValueError (3.8+).
+                if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                    try:
+                        return os.path.realpath(candidate)
+                    except Exception:
+                        return candidate  # canonicalizing is optional
+        except Exception:
+            pass  # Best effort; the hint is optional
         return exe
 
     @staticmethod
