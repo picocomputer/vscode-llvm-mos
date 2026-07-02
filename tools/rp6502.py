@@ -19,6 +19,7 @@ import select
 import ctypes
 import json
 import glob
+import shlex
 import shutil
 import socket
 import subprocess
@@ -829,9 +830,22 @@ class Console:
         self.serial.write(b"END\r")
         self.wait_for_prompt("]")
 
-    def load(self, name: str):
-        """Load a previously uploaded ROM file."""
-        self.serial.write(f"LOAD {json.dumps(name)}\r".encode("ascii"))
+    def load(self, name: str, args=()):
+        """Load a previously uploaded ROM file, passing args as its argv."""
+        line = f"LOAD {json.dumps(name)}"
+        for arg in args:
+            # Quote for the monitor's parser, not JSON: it decodes \NNN octal
+            # but not \uXXXX, so non-ASCII goes through as UTF-8 byte escapes.
+            quoted = '"'
+            for byte in arg.encode("utf-8"):
+                if byte in (0x22, 0x5C):  # " and backslash
+                    quoted += "\\" + chr(byte)
+                elif 0x20 <= byte < 0x7F:
+                    quoted += chr(byte)
+                else:
+                    quoted += f"\\{byte:03o}"
+            line += f' {quoted}"'
+        self.serial.write(f"{line}\r".encode("ascii"))
         self.serial.read_until()
 
     def reset(self):
@@ -1224,6 +1238,13 @@ def exec_args():
                 nargs=nargs,
                 help="Local filename." if nargs == 1 else "Local filename(s).",
             )
+    # Everything after the ROM filename is the ROM's argv, like `LOAD rom args...`.
+    parsers["run"].add_argument(
+        "rom_args",
+        nargs=argparse.REMAINDER,
+        metavar="args",
+        help="Arguments passed to the ROM.",
+    )
     parser.add_argument(
         "-a",
         "--address",
@@ -1331,6 +1352,7 @@ def exec_args():
                     "key": pick("key"),
                     "workdir": pick("workdir"),
                     "term": pick("term") or args.term,
+                    "args": pick("args"),
                     "emulator": pick("emulator") or Emulator.find(),
                 }
                 with open(args.config, "w") as cfg:
@@ -1344,6 +1366,7 @@ def exec_args():
             args.device = sec.get("device", args.device)
             args.key = sec.get("key", "") or args.key or None
             args.term = sec.get("term", args.term)
+            args.config_args = sec.get("args", "")
 
     if args.workdir:
         args.workdir = args.workdir.strip().strip("/") or None
@@ -1390,6 +1413,13 @@ def exec_args():
                 f"[{SCRIPT_FILE}] {total_bytes} bytes in {elapsed:.2f}s ({rate:.0f} bytes/s)"
             )
 
+    def config_rom_args():
+        """The ROM's argv[1..] from the config 'args' key, shell-style quoted."""
+        try:
+            return shlex.split(getattr(args, "config_args", ""))
+        except ValueError as e:
+            raise RuntimeError(f"Cannot parse 'args' in {args.config}: {e}")
+
     # Open console and extend error with a hint about the config file
     if args.command in ["term", "run", "upload", "basic"]:
         if args.config:
@@ -1425,7 +1455,12 @@ def exec_args():
         with open(args.filename[0], "rb") as f:
             timed_upload(console, f, os.path.basename(args.filename[0]))
         print(f"[{SCRIPT_FILE}] Loading ROM")
-        console.load(os.path.basename(args.filename[0]))
+        rom_args = args.rom_args
+        if rom_args and rom_args[0] == "--":  # REMAINDER keeps a leading "--"
+            rom_args = rom_args[1:]
+        if not rom_args:
+            rom_args = config_rom_args()
+        console.load(os.path.basename(args.filename[0]), rom_args)
         if args.term:
             console.terminal(code_page)
 
@@ -1564,6 +1599,11 @@ def exec_args():
                 )
             emulator = resolved
         cmd = [emulator, "--dap", "--ini", args.config]
+        # Config args ride the emulator command line as the ROM's argv;
+        # a launch request that carries its own args overrides them there.
+        rom_args = config_rom_args()
+        if rom_args:
+            cmd += ["--"] + rom_args
         # Status to stderr only: stdout carries the lldb-dap DAP stream.
         print(f"[{SCRIPT_FILE}] Launching {emulator}", file=sys.stderr)
         # Inherit stdio so the DAP stream passes straight through.
