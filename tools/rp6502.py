@@ -1348,12 +1348,12 @@ def exec_args():
                 config.remove_section(SCRIPT_NAME)  # drop legacy [RP6502]
                 # User always sees the full list of keys, even when blank.
                 config[launch] = {
+                    "emulator": pick("emulator") or Emulator.find(),
                     "device": pick("device") or args.device,
                     "key": pick("key"),
                     "workdir": pick("workdir"),
-                    "term": pick("term") or args.term,
                     "args": pick("args"),
-                    "emulator": pick("emulator") or Emulator.find(),
+                    "term": pick("term") or args.term,
                 }
                 with open(args.config, "w") as cfg:
                     config.write(cfg)
