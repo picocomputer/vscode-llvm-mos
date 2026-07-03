@@ -22,7 +22,6 @@ import glob
 import shlex
 import shutil
 import socket
-import subprocess
 from typing import Union
 
 # POSIX
@@ -570,15 +569,44 @@ class Console:
     def __init__(self, port):
         """Initialize console over serial or telnet connection."""
         self.serial = port
+        self._code_page = None
         self.serial.open()
 
     def code_page(self, timeout: float = RESPONSE_TIMEOUT) -> str:
-        """Fetch code page to use for terminal encoding"""
-        self.serial.write(b"set cp\r")
-        self.wait_for_prompt(":", timeout)
-        result = self.serial.read_until().decode("ascii")
-        self.wait_for_prompt("]", timeout)
-        return f"cp{re.sub(r'[^0-9]', '', result)}"
+        """Fetch (and cache) the device code page for terminal/filename encoding."""
+        if self._code_page is None:
+            self.serial.write(b"set cp\r")
+            self.wait_for_prompt(":", timeout)
+            result = self.serial.read_until().decode("ascii")
+            self.wait_for_prompt("]", timeout)
+            self._code_page = f"cp{re.sub(r'[^0-9]', '', result)}"
+        return self._code_page
+
+    def quote(self, s: str) -> str:
+        """Quote a name/arg for the monitor parser (LOAD/UPLOAD/CD).
+
+        The monitor stores the decoded bytes verbatim as an OEM code-page
+        filename (FatFs FF_LFN_UNICODE=0), so encode to the device code page,
+        not UTF-8; the parser decodes \\NNN octal, so non-printable and high
+        bytes ride as octal to keep the wire ASCII-clean. Pure-ASCII strings
+        encode the same under every code page, so skip the `set cp` round-trip.
+        Characters absent from the code page become '?'.
+        """
+        encoding = "ascii" if s.isascii() else self.code_page()
+        try:
+            raw = s.encode(encoding, "replace")
+        except LookupError:
+            raw = s.encode("ascii", "replace")  # unknown code page; degrade
+        out = ['"']
+        for byte in raw:
+            if byte in (0x22, 0x5C):  # " and backslash
+                out.append("\\" + chr(byte))
+            elif 0x20 <= byte < 0x7F:
+                out.append(chr(byte))
+            else:
+                out.append(f"\\{byte:03o}")
+        out.append('"')
+        return "".join(out)
 
     def terminal(self, cp):
         """Dispatch to the correct terminal emulator"""
@@ -815,7 +843,7 @@ class Console:
 
     def upload(self, file, name: str):
         """Upload readable file to remote file "name"."""
-        self.serial.write(bytes(f"UPLOAD {json.dumps(name)}\r", "ascii"))
+        self.serial.write(bytes(f"UPLOAD {self.quote(name)}\r", "ascii"))
         self.wait_for_prompt("}")
         file.seek(0)
         while True:
@@ -832,19 +860,9 @@ class Console:
 
     def load(self, name: str, args=()):
         """Load a previously uploaded ROM file, passing args as its argv."""
-        line = f"LOAD {json.dumps(name)}"
+        line = f"LOAD {self.quote(name)}"
         for arg in args:
-            # Quote for the monitor's parser, not JSON: it decodes \NNN octal
-            # but not \uXXXX, so non-ASCII goes through as UTF-8 byte escapes.
-            quoted = '"'
-            for byte in arg.encode("utf-8"):
-                if byte in (0x22, 0x5C):  # " and backslash
-                    quoted += "\\" + chr(byte)
-                elif 0x20 <= byte < 0x7F:
-                    quoted += chr(byte)
-                else:
-                    quoted += f"\\{byte:03o}"
-            line += f' {quoted}"'
+            line += f" {self.quote(arg)}"
         self.serial.write(f"{line}\r".encode("ascii"))
         self.serial.read_until()
 
@@ -1350,8 +1368,8 @@ def exec_args():
                 config[launch] = {
                     "emulator": pick("emulator") or Emulator.find(),
                     "device": pick("device") or args.device,
-                    "key": pick("key"),
-                    "workdir": pick("workdir"),
+                    "key": pick("key") or args.key or "",
+                    "workdir": pick("workdir") or args.workdir or "",
                     "args": pick("args"),
                     "term": pick("term") or args.term,
                 }
@@ -1361,7 +1379,7 @@ def exec_args():
             raise RuntimeError(f"Cannot load config {args.config}: {e}")
         if config.has_section(launch):
             sec = config[launch]
-            args.workdir = sec.get("workdir", "") or None
+            args.workdir = sec.get("workdir", "") or args.workdir or None
             args.emulator = sec.get("emulator", "")
             args.device = sec.get("device", args.device)
             args.key = sec.get("key", "") or args.key or None
@@ -1439,7 +1457,7 @@ def exec_args():
         console = Console(transport)
         console.send_break()
         if args.workdir:
-            console.command(f"CD {json.dumps('/' + args.workdir)}")
+            console.command(f"CD {console.quote('/' + args.workdir)}")
 
     if args.command == "term":
         code_page = console.code_page()
@@ -1584,7 +1602,7 @@ def exec_args():
         emulator = os.path.expanduser(os.path.expandvars(emulator))
         # An explicit path (with a separator) must exist; a bare name is resolved
         # against PATH so we can report "not found on PATH" precisely (rather than
-        # a misleading errno from subprocess on non-executable PATH entries).
+        # a misleading errno from execvp on non-executable PATH entries).
         has_sep = os.sep in emulator or (os.altsep and os.altsep in emulator)
         if has_sep:
             if not os.path.isfile(emulator):
@@ -1606,13 +1624,14 @@ def exec_args():
             cmd += ["--"] + rom_args
         # Status to stderr only: stdout carries the lldb-dap DAP stream.
         print(f"[{SCRIPT_FILE}] Launching {emulator}", file=sys.stderr)
-        # Inherit stdio so the DAP stream passes straight through.
+        # Replace this process with the emulator so there is no middleman to
+        # leave the emulator orphaned when the IDE stops the debug session.
+        # Our stdio (the DAP stream) carries straight over the exec.
         try:
-            returncode = subprocess.run(cmd).returncode
+            os.execvp(cmd[0], cmd)
         except OSError as e:
             # Backstop for exec failures on a path shutil.which deemed runnable.
             raise RuntimeError(f"Cannot run emulator '{emulator}'{config_hint}: {e}")
-        sys.exit(returncode)
 
 
 # This file may be included or run like a program.
