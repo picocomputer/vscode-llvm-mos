@@ -2,6 +2,6 @@
     "recommendations": [
         "ms-vscode.cpptools-extension-pack",
         "llvm-vs-code-extensions.lldb-dap",
-        "ms-python.python",
+        "ms-python.debugpy",
     ]
 }
