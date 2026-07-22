@@ -7,8 +7,6 @@ find_package(llvm-mos-sdk REQUIRED)
 
 project(MY-RP6502-PROJECT C CXX ASM)
 
-add_compile_options(-g -gdwarf-4) # for rp6502-emu
-
 add_executable(hello)
 rp6502_asset(hello help src/help.txt)
 rp6502_executable(hello DATA file RESET file)
