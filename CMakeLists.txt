@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.18)
 
-add_subdirectory(tools)
-
 set(LLVM_MOS_PLATFORM rp6502)
 find_package(llvm-mos-sdk REQUIRED)
 
 project(MY-RP6502-PROJECT C CXX ASM)
+
+add_subdirectory(tools)
 
 add_executable(hello)
 rp6502_asset(hello help src/help.txt)

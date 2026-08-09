@@ -1,25 +1,24 @@
-# RP6502 VSCode Scaffolding for LLVM-MOS
+# RP6502 VS Code Scaffolding for LLVM-MOS
 
-This is scaffolding for a new Picocomputer 6502 software project.
+This provides scaffolding for a new Picocomputer 6502 software project. A C
+example of "Hello, world!" is included.
 
 ### LLVM PATH notes
 
 LLVM-MOS must be in your PATH. However, this may conflict with other LLVM
-installations, like the one that comes with your operating system.
-In that case, you can adjust the path for only CMake with a VSCode setting.
-Add a file `.vscode/settings.json` with the following contents. Adjust the
-path for where you installed LLVM-MOS.
-```
-{
+installations, like the one that comes with your operating system. In that
+case, you can adjust the path for only CMake with a VS Code setting. Add a
+`cmake.environment` setting to `.vscode/settings.json`, adjusting the path
+for where you installed LLVM-MOS.
+```json
     "cmake.environment": {
         "PATH": "~/llvm-mos/bin:${env:PATH}"
-    }
-}
+    },
 ```
 
 ### Linux Tools Install:
- * [VSCode](https://code.visualstudio.com/). This has its own installer.
- * An install of [LLVM-MOS](https://llvm-mos.org/wiki/Welcome).
+ * [VS Code](https://code.visualstudio.com/) - This has its own installer.
+ * An install of [LLVM-MOS](https://llvm-mos.org/wiki/Welcome) -
    See PATH notes above.
  * The following tools installed from your package manager:
     * `sudo apt install cmake python3 git build-essential`
@@ -28,21 +27,21 @@ path for where you installed LLVM-MOS.
  * `winget install -e --id Microsoft.VisualStudioCode`
  * `winget install -e --id Git.Git`
  * `winget install -e --id Kitware.CMake`
- * `winget install -e --id GnuWin32.Make`.
-    Add "C:\Program Files (x86)\GnuWin32\bin" to your path.
- * An install of [LLVM-MOS](https://llvm-mos.org/wiki/Welcome).
+ * `winget install -e --id GnuWin32.Make`
+   Add `C:\Program Files (x86)\GnuWin32\bin` to your PATH.
+ * An install of [LLVM-MOS](https://llvm-mos.org/wiki/Welcome) -
    See PATH notes above.
- * Install python by typing `python3` which will launch the Microsoft Store
-   where you start the install. If python runs, this has already been done,
-   exit python with Ctrl-Z plus Return.
+ * Install Python by typing `python3` in a command prompt, which will launch
+   the Microsoft Store where you can start the installation. If Python runs,
+   this has already been done - exit Python with Ctrl-Z plus Enter.
 
 ### Getting Started:
 Go to the [GitHub template](https://github.com/picocomputer/vscode-llvm-mos)
 and select "Use this template" then "Create a new repository". GitHub will
-make a clean project for you to start with. Then you can download the
+create a clean project for you to start with. Then you can clone the
 repository and open the files.
 
-```
+```bash
 $ git clone [path_to_github]
 $ cd [to_where_it_cloned]
 $ code .
@@ -81,3 +80,7 @@ Ctrl-A then X will exit. Ctrl-A then B will send a break.
 
 Edit `CMakeLists.txt` to add new source and asset files. From here on, it's
 standard C/C++/assembly development for the 6502 platform.
+
+### Documentation:
+ * [Picocomputer](https://picocomputer.github.io)
+ * [LLVM-MOS](https://llvm-mos.org/)
