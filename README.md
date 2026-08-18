@@ -1,3 +1,7 @@
+# Archived - DO NOT USE
+
+Use the [SDK](https://github.com/picocomputer/rp6502-sdk) instead.
+
 # RP6502 VS Code Scaffolding for LLVM-MOS
 
 This provides scaffolding for a new Picocomputer 6502 software project. A C
